@@ -1,5 +1,7 @@
 package com.luv.fraud_service;
 
+import java.util.TimeZone;
+
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 
@@ -7,6 +9,7 @@ import org.springframework.boot.autoconfigure.SpringBootApplication;
 public class FraudServiceApplication {
 
 	public static void main(String[] args) {
+		TimeZone.setDefault(TimeZone.getTimeZone("Asia/Kolkata"));
 		SpringApplication.run(FraudServiceApplication.class, args);
 	}
 
