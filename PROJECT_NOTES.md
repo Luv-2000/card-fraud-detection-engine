@@ -77,27 +77,23 @@ Windows, PowerShell, IntelliJ IDEA, Java 21 (Temurin), Docker Desktop. Maven via
 - Workaround: TimeZone.setDefault("Asia/Kolkata") at the start of main (Asia/Calcutta is rejected by Postgres)
 - Run: docker compose up -d, then .\mvnw.cmd spring-boot:run (or IntelliJ run button)
 
-### Stage 3: IN PROGRESS (concepts 1-7 done, no Java code yet)
-- Kafka runs in docker-compose.yml next to Postgres: image apache/kafka:4.3.1, container kafka, port 9092 (localhost:9092 from the host). No volume: `docker compose down` deletes topics; stop/start keeps them.
-- Topic card-transactions created by hand: 3 partitions, replication factor 1. A scratch topic was used to test keys and then deleted.
-- Verified in the console: same key always lands in the same partition (CARD-10482 both in partition 0).
-- Run: docker compose up -d (postgres + kafka). If Kafka was removed, recreate the topic with kafka-topics.sh --create --topic card-transactions --partitions 3 --replication-factor 1 --bootstrap-server localhost:9092 (via docker exec kafka /opt/kafka/bin/...).
+### Stage 3: DONE
+- Kafka (apache/kafka:4.3.1, localhost:9092) in docker-compose. Topic card-transactions: 3 partitions, replication factor 1.
+- transaction-generator: continuous. TransactionFactory builds random transactions (20 cards CARD-10001..10020, amounts Rs 100-5,000 with ~1 in 50 at Rs 1,00,000-5,00,000, home country IN with ~1 in 20 foreign, ~1 in 25 risky category). Sends every 500 ms, key = cardId, still waits with .get(). Percentages are placeholders, to tune in Stage 4.
+- fraud-service consumer: skips duplicates with existsById before save. Value deserializer is ErrorHandlingDeserializer wrapping JacksonJsonDeserializer. A bad message (tested with "not-json") no longer blocks the consumer; it is logged and skipped.
 
-### Stage 3 decisions (with reasons)
-- Message key = cardId. Same card goes to the same partition, so the velocity and country-change rules see one card's transactions in order. Ordering is per card only, not global. Rejected: no key (order across a card's transactions lost).
-- 3 partitions, fixed. Allows up to 3 fraud-service instances in the group. Changing the count later changes which partition a key maps to. Rejected: letting Kafka auto-create the topic (defaults to 1 partition).
-- Consumer group id: fraud-service. Committed offsets are stored by Kafka per group per partition.
-- Delivery is at-least-once (retries and crashes before commit can cause duplicates). Duplicates are handled using Transaction.id (the generator's UUID). Not claiming exactly-once.
-- Message value = JSON. Spring Boot 4 uses Jackson 3 (dates as ISO-8601 strings). Use Spring Kafka 4.x JacksonJsonSerializer / JacksonJsonDeserializer (target type Transaction), not the older JsonSerializer / JsonDeserializer. Key = string serializer. Rejected: Avro / schema registry (out of scope).
-- Single local broker, replication factor 1: no fault tolerance. Resume wording: "Kafka broker in Docker Compose (single node)", never "cluster", "fault-tolerant" or "guaranteed delivery".
+### Stage 3 decisions added (with reasons)
+- Duplicate skip via existsById. Rejected: relying on save() merge (silently updates; in Stage 4 a redelivered message would create duplicate alerts and double-count the Redis velocity counter). Safe because one cardId always goes to one partition and there is one consumer. Not "exactly-once".
+- ErrorHandlingDeserializer added after a bad message made the consumer loop forever (observed). Skipped messages are only logged. Rejected: dead-letter topic (out of scope). Resume wording: "logs and skips undeserializable messages".
+- Generator amounts built in paise as long, then BigDecimal.valueOf(paise, 2). Currency is always INR, even for foreign countries (no rule uses currency).
 
-### Concepts covered (Stage 3)
-Message broker, producer, consumer, topic, log, offset, committed offset, retention, partitions, keys, consumer groups, rebalance, acknowledgements and retries, serialization and deserialization, JSON.
+### Unverified / TODO
+- Behavior for a readable message that fails validation (e.g. amount -50) was NOT tested. Test in Stage 6 and handle then.
+- Still open: keep or turn off show-sql (Stage 8); credentials to env vars before repo goes public (Stage 5); timezone issue in tests (Stage 6).
+- Git: Stage 3 changes committed, not pushed.
 
-### Next steps
-1. Concept 8: create the transaction-generator Spring Boot project (Spring Initializr, Spring for Apache Kafka), producer with KafkaTemplate, key = cardId, wait for ack.
-2. Concept 9: fraud-service consumer (@KafkaListener, group id fraud-service) saving to Postgres.
-3. Concept 10: duplicates (same Transaction.id) and bad messages (the validation TODO) in the consumer.
+### Next step
+Stage 4, Concept 1: Redis (what it is, why velocity counting needs it).
 
 ### Decisions (with reasons)
 - Transaction.id is a UUID made by the generator, not the database. The transaction exists before it reaches Postgres, and Kafka can deliver a message twice; a DB-made ID would turn one transaction into two rows. Rejected: DB-generated ID.

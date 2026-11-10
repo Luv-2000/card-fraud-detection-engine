@@ -1,9 +1,5 @@
 package com.luv.transaction_generator;
 
-import java.math.BigDecimal;
-import java.time.Instant;
-import java.util.UUID;
-
 import org.springframework.boot.CommandLineRunner;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
@@ -17,9 +13,13 @@ public class TransactionGeneratorApplication {
 	}
 
 	@Bean
-	CommandLineRunner sendOne(TransactionProducer producer) {
-		return args -> producer.send(new Transaction(
-				UUID.randomUUID(), "CARD-10482", new BigDecimal("2499.00"),
-				"INR", "GROCERY", "IN", Instant.now()));
+	CommandLineRunner sendForever(TransactionProducer producer) {
+		return args -> {
+			TransactionFactory factory = new TransactionFactory();
+			while (true) {
+				producer.send(factory.create());
+				Thread.sleep(500);
+			}
+		};
 	}
 }

@@ -17,6 +17,10 @@ public class TransactionConsumer {
 
     @KafkaListener(topics = "card-transactions", groupId = "fraud-service")
     public void onMessage(Transaction transaction) {
+        if (transactionRepository.existsById(transaction.getId())) {
+            System.out.println("Skipping duplicate transaction " + transaction.getId());
+            return;
+        }
         transactionRepository.save(transaction);
         System.out.println("Saved transaction " + transaction.getId());
     }
