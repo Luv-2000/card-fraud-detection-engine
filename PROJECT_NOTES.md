@@ -60,6 +60,19 @@ Stage 9: async AI alert explainer. Never changes a rule decision.
 - Check version-specific details (Spring Boot 4.x) before giving code. Do not rely on older 3.x examples.
 - At the end of each stage, give me an updated state block for this file.
 - Keep steps clean and in order. Do not re-list or restate earlier steps.
+  
+Testing:
+- Test every API endpoint using both Postman and Swagger UI (springdoc-openapi).
+- Teach each tool from scratch the first time it is used: what it is, why it is needed, how to use it.
+- Include a Postman/Swagger test step in each stage that adds or changes an endpoint, including the JWT stage.
+
+Git:
+- Commit to git regularly, not only at the end of a stage.
+- Tell me when to commit: after each working step (a feature runs or a test passes), and always before I start a new chat.
+- Give me the exact commands and a one-line commit message each time (for example "Stage 2: add Transaction entity and repository").
+- Make the last commit of each stage "Stage N complete", then push to GitHub.
+- Before the first commit, set up .gitignore. Never commit passwords, the JWT secret, or any local config with credentials.
+- Update the state block in PROJECT_NOTES.md before the stage-end commit, so the commit holds the latest state.
 
 ## Current state
 
