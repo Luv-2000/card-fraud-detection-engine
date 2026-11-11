@@ -12,11 +12,25 @@ public class TransactionFactory {
     private static final String[] FOREIGN_COUNTRIES = {"US", "SG", "AE"};
 
     private final Random random = new Random();
+    // Burst state: when burstRemaining > 0, the next transactions reuse burstCardId.
+    private String burstCardId = null;
+    private int burstRemaining = 0;
 
     public Transaction create() {
         // 20 cards: CARD-10001 to CARD-10020
-        String cardId = "CARD-" + (10001 + random.nextInt(20));
-
+        String cardId;
+        if (burstRemaining > 0) {
+            // inside a burst: same card again
+            cardId = burstCardId;
+            burstRemaining--;
+        } else if (random.nextInt(300) == 0) {
+            // about 1 in 300: start a burst of 12 transactions on one card
+            burstCardId = "CARD-" + (10001 + random.nextInt(20));
+            burstRemaining = 11;
+            cardId = burstCardId;
+        } else {
+            cardId = "CARD-" + (10001 + random.nextInt(20));
+        }
         // amount in paise (1 rupee = 100 paise), so we never use floating point
         long paise;
         if (random.nextInt(50) == 0) {
