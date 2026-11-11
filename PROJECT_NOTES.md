@@ -41,8 +41,8 @@ Stage 9: async AI alert explainer. Never changes a rule decision.
 |---|---|---|---|---|
 | 1 | Setup | Spring Boot, Postgres in Docker, first endpoint, DB connection | DONE | - |
 | 2 | Data layer | JPA entities, repositories, validation, global error handling, REST endpoints | DONE | 4-6 h |
-| 3 | Kafka | Generator service publishes, fraud-service consumes and stores | Todo | 6-8 h |
-| 4 | Fraud rules + Redis | 4 rules, Redis velocity counters, alerts saved | Todo | 8-10 h |
+| 3 | Kafka | Generator service publishes, fraud-service consumes and stores | Done | 6-8 h |
+| 4 | Fraud rules + Redis | 4 rules, Redis velocity counters, alerts saved | Done | 8-10 h |
 | 5 | JWT security | Login, token validation, protected API, credentials to env vars | Todo | 4-5 h |
 | 6 | Tests | JUnit/Mockito for rules, Testcontainers for Postgres/Kafka/Redis | Todo | 6-8 h |
 | 7 | CI | GitHub Actions build and test on push | Todo | 2-3 h |
@@ -91,22 +91,45 @@ Windows, PowerShell, IntelliJ IDEA, Java 21 (Temurin), Docker Desktop. Maven via
 - Run: docker compose up -d, then .\mvnw.cmd spring-boot:run (or IntelliJ run button)
 
 ### Stage 3: DONE
-- Kafka (apache/kafka:4.3.1, localhost:9092) in docker-compose. Topic card-transactions: 3 partitions, replication factor 1.
-- transaction-generator: continuous. TransactionFactory builds random transactions (20 cards CARD-10001..10020, amounts Rs 100-5,000 with ~1 in 50 at Rs 1,00,000-5,00,000, home country IN with ~1 in 20 foreign, ~1 in 25 risky category). Sends every 500 ms, key = cardId, still waits with .get(). Percentages are placeholders, to tune in Stage 4.
-- fraud-service consumer: skips duplicates with existsById before save. Value deserializer is ErrorHandlingDeserializer wrapping JacksonJsonDeserializer. A bad message (tested with "not-json") no longer blocks the consumer; it is logged and skipped.
+(unchanged: Kafka in compose, topic card-transactions with 3 partitions, generator, consumer with existsById duplicate skip, ErrorHandlingDeserializer. Bad messages are logged and skipped.)
 
-### Stage 3 decisions added (with reasons)
-- Duplicate skip via existsById. Rejected: relying on save() merge (silently updates; in Stage 4 a redelivered message would create duplicate alerts and double-count the Redis velocity counter). Safe because one cardId always goes to one partition and there is one consumer. Not "exactly-once".
-- ErrorHandlingDeserializer added after a bad message made the consumer loop forever (observed). Skipped messages are only logged. Rejected: dead-letter topic (out of scope). Resume wording: "logs and skips undeserializable messages".
-- Generator amounts built in paise as long, then BigDecimal.valueOf(paise, 2). Currency is always INR, even for foreign countries (no rule uses currency).
+### Stage 4: DONE
+- Redis (redis:7, container fraud-redis, port 6379, no volume) in docker-compose. Dependency spring-boot-starter-data-redis. StringRedisTemplate used directly.
+- Package rules: interface FraudRule { Alert evaluate(Transaction) }, returns Alert or null. Rules never touch Postgres.
+- Rules (all @Component, thresholds via @Value constructor params, set in application.properties):
+    - HighAmountRule: amount.compareTo(threshold) > 0, threshold 50000 (strictly over)
+    - HighRiskMerchantRule: categories GAMBLING,CRYPTO_EXCHANGE, case-sensitive equals
+    - VelocityRule: Redis key velocity:<cardId>, INCR, EXPIRE only when count == 1, alert when count > 10, window 60 s
+    - CountryChangeRule: Redis key lastcountry:<cardId>, read old value then SET new with 30-minute TTL, alert if previous exists and differs
+- TransactionConsumer: existsById skip, save transaction, for-loop over List<FraudRule>, save each non-null Alert.
+- Generator: bursts added (about 1 in 300 calls starts 12 consecutive transactions on one card, single sending loop assumed). Other percentages unchanged.
+- Verified end to end by hand: all four rule names appear in the alerts table, Redis keys exist with TTLs. Postman tested GET /alerts.
+
+### Stage 4 decisions (with reasons)
+- Rules return Alert or null, the consumer saves. Reason: each rule can be unit tested with no Postgres or Kafka. Rejected: rules saving alerts themselves.
+- Config in application.properties, values passed through constructors. Reason: thresholds can be changed without editing logic, and tests build rules with plain new. Not "changeable without redeploy": the file is inside the jar.
+- Velocity is a fixed window in Redis. Rejected: sliding window (out of scope), Postgres count query per message (database load).
+- Country change keeps the previous country in Redis with a TTL. Rejected: querying Postgres for the card's last transaction (extra repository method, query on every message).
+- High-amount threshold 50000, because the generator's high amounts start at exactly 1,00,000 and normal ones stop at 5,000.
+- Burst generator chosen over lowering velocity N, so the rule is shown on the scenario it exists for. Rejected: N = 5, which fires on ordinary traffic.
+
+### Resume-defensibility limits found in Stage 4
+- Velocity and country-change windows use processing time, not the transaction timestamp. Replayed old messages would give wrong counts.
+- INCR and EXPIRE are two calls. A crash between them leaves a counter with no expiry.
+- If transaction save succeeds and Redis fails, a retry hits existsById and skips the rules, so an alert can be missed. Do not claim "no missed alerts" or "exactly-once".
+- Wording to use: "per-card transaction counter with a time window". Not "sliding window".
 
 ### Unverified / TODO
-- Behavior for a readable message that fails validation (e.g. amount -50) was NOT tested. Test in Stage 6 and handle then.
-- Still open: keep or turn off show-sql (Stage 8); credentials to env vars before repo goes public (Stage 5); timezone issue in tests (Stage 6).
-- Git: Stage 3 changes committed, not pushed.
+- Readable message that fails validation (e.g. amount -50) still untested. Test and handle in Stage 6.
+- Swagger UI (springdoc-openapi) not set up yet. Teach it in Stage 5 with the JWT endpoints. Postman is set up and used.
+- Rules have no unit tests yet (Stage 6).
+- show-sql adds noise for the load test (decide in Stage 8).
+- Credentials (fraud/fraud) are in application.properties and docker-compose. Move to environment variables in Stage 5, before the repo goes public.
+- Timezone issue in tests (Stage 6).
+- Delete the temporary System.out.println lines or replace with a logger before Stage 8 if they distort the load test.
 
 ### Next step
-Stage 4, Concept 1: Redis (what it is, why velocity counting needs it).
+Stage 5, Concept 1: JWT (what problem it solves and what a token is).
 
 ### Decisions (with reasons)
 - Transaction.id is a UUID made by the generator, not the database. The transaction exists before it reaches Postgres, and Kafka can deliver a message twice; a DB-made ID would turn one transaction into two rows. Rejected: DB-generated ID.
