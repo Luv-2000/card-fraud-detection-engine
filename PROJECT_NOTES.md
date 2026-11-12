@@ -43,7 +43,7 @@ Stage 9: async AI alert explainer. Never changes a rule decision.
 | 2 | Data layer | JPA entities, repositories, validation, global error handling, REST endpoints | DONE | 4-6 h |
 | 3 | Kafka | Generator service publishes, fraud-service consumes and stores | Done | 6-8 h |
 | 4 | Fraud rules + Redis | 4 rules, Redis velocity counters, alerts saved | Done | 8-10 h |
-| 5 | JWT security | Login, token validation, protected API, credentials to env vars | Todo | 4-5 h |
+| 5 | JWT security | Login, token validation, protected API, credentials to env vars | Done | 4-5 h |
 | 6 | Tests | JUnit/Mockito for rules, Testcontainers for Postgres/Kafka/Redis | Todo | 6-8 h |
 | 7 | CI | GitHub Actions build and test on push | Todo | 2-3 h |
 | 7b | Containerize services | Dockerfile per service, compose runs the whole system | Todo | 1-2 h |
@@ -62,10 +62,9 @@ Stage 9: async AI alert explainer. Never changes a rule decision.
 - Keep steps clean and in order. Do not re-list or restate earlier steps.
   
 Testing:
-- Test every API endpoint using both Postman and Swagger UI (springdoc-openapi).
+- Test every API endpoint using Postman.
 - Teach each tool from scratch the first time it is used: what it is, why it is needed, how to use it.
-- Include a Postman/Swagger test step in each stage that adds or changes an endpoint, including the JWT stage.
-
+- Include a Postman test step in each stage that adds or changes an endpoint.
 Git:
 - Commit to git regularly, not only at the end of a stage.
 - Tell me when to commit: after each working step (a feature runs or a test passes), and always before I start a new chat.
@@ -113,6 +112,28 @@ Windows, PowerShell, IntelliJ IDEA, Java 21 (Temurin), Docker Desktop. Maven via
 - High-amount threshold 50000, because the generator's high amounts start at exactly 1,00,000 and normal ones stop at 5,000.
 - Burst generator chosen over lowering velocity N, so the rule is shown on the scenario it exists for. Rejected: N = 5, which fires on ordinary traffic.
 
+### Stage 5: DONE
+- Dependencies added: spring-boot-starter-security, spring-boot-starter-oauth2-resource-server (includes Nimbus JWT). No separate JWT library, no custom filter: Spring's built-in bearer token filter reads the token.
+- security package: SecurityConfig (CSRF off, stateless, /login and /ping open, everything else needs a valid token, JwtDecoder and JwtEncoder beans using HS256 with the secret), LoginRequest, LoginResponse. controller/AuthController: POST /login.
+- Login: one configured user. Username compared with APP_USERNAME, password checked with BCrypt against APP_PASSWORD_HASH. Same 401 message for wrong username or wrong password. Token has sub, iat, exp (60 minutes, app.jwt.expiry-minutes).
+- Env vars (in .env, git-ignored; .env.example committed with fake values): POSTGRES_PASSWORD, JWT_SECRET, APP_USERNAME, APP_PASSWORD_HASH. application.properties and docker-compose.yml use placeholders. Postgres volume was recreated with the new password.
+- PowerShell: load .env with the loader loop before running from a terminal; IntelliJ needs the variables in the Run Configuration (hash without quotes).
+- Tested by hand: login 200, wrong password 401, /alerts with no token 401, with token 200, missing alert 404. Postman collection (local, not in repo) holds login plus alerts and transactions requests, token stored in a collection variable by a post-response script.
+
+### Stage 5 decisions (with reasons)
+- One configured user, no users table. Reason: auth is supporting work; stays inside locked scope. Rejected: users table with seeded users (extra entity and repository).
+- Spring's built-in resource server instead of a custom JwtAuthFilter. Reason: less code, standard approach, same concepts. Rejected: custom filter with jjwt.
+- Swagger UI / springdoc dropped. Reason: user did not want extra code; Postman covers testing. Rejected: springdoc 3.0.x.
+- CSRF disabled because the API is stateless and uses bearer tokens, not cookies.
+
+### Resume-defensibility limits found in Stage 5
+- Single configured user, no roles, no registration, no refresh tokens. Say "one configured service account".
+- No rate limiting on /login. Do not claim brute-force protection.
+- A token cannot be revoked before it expires (60 minutes). Changing JWT_SECRET invalidates all tokens.
+- Local HTTP only, so the password travels unencrypted. Do not claim transport security.
+- Old password fraud/fraud remains in git history (dead, local only).
+- Wording to use: "JWT-secured REST API using Spring Security", "passwords stored as BCrypt hashes", "secrets externalized via environment variables". Not "production-grade authentication" or "secure secrets management".
+
 ### Resume-defensibility limits found in Stage 4
 - Velocity and country-change windows use processing time, not the transaction timestamp. Replayed old messages would give wrong counts.
 - INCR and EXPIRE are two calls. A crash between them leaves a counter with no expiry.
@@ -121,15 +142,14 @@ Windows, PowerShell, IntelliJ IDEA, Java 21 (Temurin), Docker Desktop. Maven via
 
 ### Unverified / TODO
 - Readable message that fails validation (e.g. amount -50) still untested. Test and handle in Stage 6.
-- Swagger UI (springdoc-openapi) not set up yet. Teach it in Stage 5 with the JWT endpoints. Postman is set up and used.
 - Rules have no unit tests yet (Stage 6).
 - show-sql adds noise for the load test (decide in Stage 8).
-- Credentials (fraud/fraud) are in application.properties and docker-compose. Move to environment variables in Stage 5, before the repo goes public.
 - Timezone issue in tests (Stage 6).
 - Delete the temporary System.out.println lines or replace with a logger before Stage 8 if they distort the load test.
+- FraudServiceApplicationTests (contextLoads) needs POSTGRES_PASSWORD, JWT_SECRET, APP_USERNAME, APP_PASSWORD_HASH set; handle in Stage 6 (Testcontainers, test properties).
 
 ### Next step
-Stage 5, Concept 1: JWT (what problem it solves and what a token is).
+Stage 6, Concept 1: unit testing with JUnit (what a unit test is and how to test one rule).
 
 ### Decisions (with reasons)
 - Transaction.id is a UUID made by the generator, not the database. The transaction exists before it reaches Postgres, and Kafka can deliver a message twice; a DB-made ID would turn one transaction into two rows. Rejected: DB-generated ID.
