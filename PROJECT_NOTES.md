@@ -45,7 +45,7 @@ Stage 9: async AI alert explainer. Never changes a rule decision.
 | 4 | Fraud rules + Redis | 4 rules, Redis velocity counters, alerts saved | Done | 8-10 h |
 | 5 | JWT security | Login, token validation, protected API, credentials to env vars | Done | 4-5 h |
 | 6 | Tests | JUnit/Mockito for rules, Testcontainers for Postgres/Kafka/Redis | Done | 6-8 h |
-| 7 | CI | GitHub Actions build and test on push | Todo | 2-3 h |
+| 7 | CI | GitHub Actions build and test on push | Done | 2-3 h |
 | 7b | Containerize services | Dockerfile per service, compose runs the whole system | Todo | 1-2 h |
 | 8 | Load test + resume bullets | Measure throughput and latency, bullets from real numbers | Todo | 4-5 h |
 | 9 | AI alert explainer | Async, optional | Optional | 4-6 h |
@@ -158,12 +158,25 @@ Windows, PowerShell, IntelliJ IDEA, Java 21 (Temurin), Docker Desktop. Maven via
 - Mocked Redis proves rule logic only. Expiry and counting are exercised by the integration test for the high-amount path only, not for velocity or country change windows.
 - Login success path has no automated test.
 
-### Unverified / TODO
-- show-sql adds noise for the load test (decide in Stage 8).
-- Delete the temporary System.out.println lines or replace with a logger before Stage 8 if they distort the load test.
+### Stage 7: DONE
+- .github/workflows/ci.yml at repo root. Trigger: push (all branches). One job "build" on ubuntu-latest, working-directory fraud-service. Steps: actions/checkout@v4, actions/setup-java@v4 (temurin 21, cache: maven), ./mvnw verify. First run green.
+- No secrets in CI: tests use fake values in application-test.properties. Docker is preinstalled on the runner, so Testcontainers needs no setup.
+- Fixed for Linux: mvnw was stored in git as 100644, changed to 100755 with git update-index --chmod=+x. .gitattributes already forces LF for mvnw.
+- Found and committed Testcontainers test dependencies in pom.xml that were left uncommitted from Stage 6 (CI would have failed without them).
+
+### Stage 7 decisions (with reasons)
+- One job, fraud-service only. Reason: it is the only module with tests; transaction-generator has none. Rejected: second job or matrix for the generator (nothing to test).
+- Trigger on push only. Reason: solo repo. Rejected: pull_request trigger.
+- cache: maven. Reason: faster later runs.
+
+### Resume-defensibility limits found in Stage 7
+- CI builds and tests only. No deployment, so do not say "CI/CD".
+- transaction-generator is not built or tested in CI.
+- A green build is only as strong as the tests: no coverage measured.
+- Wording to use: "GitHub Actions CI builds and runs unit and integration tests on every push". Do not add a build badge until it is shown green in the README.
 
 ### Next step
-Stage 7: GitHub Actions workflow that runs ./mvnw verify on every push.
+Stage 7b: Dockerfile per service, compose runs the whole system.
 
 ### Decisions (with reasons)
 - Transaction.id is a UUID made by the generator, not the database. The transaction exists before it reaches Postgres, and Kafka can deliver a message twice; a DB-made ID would turn one transaction into two rows. Rejected: DB-generated ID.
