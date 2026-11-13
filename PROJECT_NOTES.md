@@ -44,7 +44,7 @@ Stage 9: async AI alert explainer. Never changes a rule decision.
 | 3 | Kafka | Generator service publishes, fraud-service consumes and stores | Done | 6-8 h |
 | 4 | Fraud rules + Redis | 4 rules, Redis velocity counters, alerts saved | Done | 8-10 h |
 | 5 | JWT security | Login, token validation, protected API, credentials to env vars | Done | 4-5 h |
-| 6 | Tests | JUnit/Mockito for rules, Testcontainers for Postgres/Kafka/Redis | Todo | 6-8 h |
+| 6 | Tests | JUnit/Mockito for rules, Testcontainers for Postgres/Kafka/Redis | Done | 6-8 h |
 | 7 | CI | GitHub Actions build and test on push | Todo | 2-3 h |
 | 7b | Containerize services | Dockerfile per service, compose runs the whole system | Todo | 1-2 h |
 | 8 | Load test + resume bullets | Measure throughput and latency, bullets from real numbers | Todo | 4-5 h |
@@ -140,16 +140,30 @@ Windows, PowerShell, IntelliJ IDEA, Java 21 (Temurin), Docker Desktop. Maven via
 - If transaction save succeeds and Redis fails, a retry hits existsById and skips the rules, so an alert can be missed. Do not claim "no missed alerts" or "exactly-once".
 - Wording to use: "per-card transaction counter with a time window". Not "sliding window".
 
+### Stage 6: DONE
+- Unit tests (JUnit 5 + Mockito) for all 4 rules, 14 tests, in src/test/java/.../rules. Redis rules use a mocked StringRedisTemplate. Boundary cases covered (amount exactly at threshold, count exactly at limit, case-sensitive category).
+- One integration test, FraudPipelineIntegrationTest, with Testcontainers (real Postgres 16, Redis 7, Kafka apache/kafka:4.3.1) using @ServiceConnection. Sends JSON to Kafka topic, polls the alerts table with a plain loop (30 x 1 s).
+- Also in that test: invalid message (amount -50) is skipped and the next message is still processed; /alerts returns 401 with no token, 200 with a valid token, 401 with a tampered token.
+- Test settings in src/test/resources/application-test.properties (fake secrets, profile "test"). Old contextLoads test deleted (covered by the integration test).
+- Dependencies added (test scope): spring-boot-testcontainers, testcontainers-junit-jupiter, testcontainers-postgresql, testcontainers-kafka (Testcontainers 2.x artifact names).
+
+### Stage 6 decisions (with reasons)
+- Mockito for Redis rules, Testcontainers for one end-to-end test only. Reason: unit tests check rule logic fast; real Redis/Kafka/Postgres behaviour is checked once. Rejected: per-component container tests, controller test suites, coverage targets (repeat the same skill).
+- Tests build a token with JwtEncoder instead of calling /login. Reason: avoids needing a real BCrypt hash in test config. Login stays covered by manual Postman tests.
+- Separate application-test.properties activated by @ActiveProfiles("test"). Rejected: a test application.properties (would replace the main one).
+- Test sets default time zone to UTC in a static block (main() is skipped in tests).
+
+### Resume-defensibility limits found in Stage 6
+- Say "unit and integration tests (JUnit, Mockito, Testcontainers)". Do not quote coverage percentages: none measured.
+- Mocked Redis proves rule logic only. Expiry and counting are exercised by the integration test for the high-amount path only, not for velocity or country change windows.
+- Login success path has no automated test.
+
 ### Unverified / TODO
-- Readable message that fails validation (e.g. amount -50) still untested. Test and handle in Stage 6.
-- Rules have no unit tests yet (Stage 6).
 - show-sql adds noise for the load test (decide in Stage 8).
-- Timezone issue in tests (Stage 6).
 - Delete the temporary System.out.println lines or replace with a logger before Stage 8 if they distort the load test.
-- FraudServiceApplicationTests (contextLoads) needs POSTGRES_PASSWORD, JWT_SECRET, APP_USERNAME, APP_PASSWORD_HASH set; handle in Stage 6 (Testcontainers, test properties).
 
 ### Next step
-Stage 6, Concept 1: unit testing with JUnit (what a unit test is and how to test one rule).
+Stage 7: GitHub Actions workflow that runs ./mvnw verify on every push.
 
 ### Decisions (with reasons)
 - Transaction.id is a UUID made by the generator, not the database. The transaction exists before it reaches Postgres, and Kafka can deliver a message twice; a DB-made ID would turn one transaction into two rows. Rejected: DB-generated ID.
