@@ -35,3 +35,19 @@ Measured on synthetic transaction data, not real card data.
 - Consumer lag moved up and down (up to about 60 per partition) but did not keep growing.
 - Latency covers only transactions that produced an alert.
 - Local, single node, plain HTTP. Not a production benchmark.
+
+## Alert summary endpoint (LLM)
+
+`GET /cards/{cardId}/alert-summary` (needs a JWT, like the other endpoints)
+
+Returns the card's alert count, the rule names that fired, and a short summary written by an LLM (Google Gemini API, free tier).
+
+Example response shape:
+
+    { "cardId": "C-1042", "alertCount": 3, "ruleNames": ["HIGH_AMOUNT", "COUNTRY_CHANGE"], "summary": "..." }
+
+- The rules decide what is an alert. The LLM only reads existing alerts and writes text. It never changes a rule decision.
+- If the LLM call fails, times out (10 s), or no key is set, the response still has the real count and rule names, and the summary says "Summary unavailable."
+- Only the newest 20 alerts go into the prompt. The count is the full total.
+- Needs `LLM_API_KEY` in `.env` (see `.env.example`).
+- Runs on synthetic transaction data. The summary is generated text and can be wrong.v

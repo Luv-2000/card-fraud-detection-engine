@@ -28,8 +28,7 @@ Login (returns JWT), list alerts, get one alert, list transactions.
 Batch processing, ML models, frontend, API gateway, service discovery, Kubernetes, multi-broker Kafka, cloud deployment.
 
 ### Optional
-Stage 9: async AI alert explainer. Never changes a rule decision.
-
+Stage 9: LLM alert summary per card (GET /cards/{cardId}/alert-summary). Never changes a rule decision.
 ## Resume-defensibility rules
 - Say "synthetic transaction data". Never imply real card data.
 - Every resume number comes from my own stage 8 load test, with the setup noted (machine, single broker, local Docker).
@@ -48,7 +47,7 @@ Stage 9: async AI alert explainer. Never changes a rule decision.
 | 7 | CI | GitHub Actions build and test on push | Done | 2-3 h |
 | 7b | Containerize services | Dockerfile per service, compose runs the whole system | Done | 1-2 h |
 | 8 | Load test + resume bullets | Measure throughput and latency, bullets from real numbers | Done | 4-5 h |
-| 9 | AI alert explainer | Async, optional | Optional | 4-6 h |
+| 9 | LLM alert summary per card | One read-only endpoint, no async | Done | 4-6 h |
 
 ## Current state
 
@@ -197,8 +196,32 @@ Windows, PowerShell, IntelliJ IDEA, Java 21 (Temurin), Docker Desktop. Maven via
 - Do not claim "real-time" without the numbers and setup next to it.
 - Wording to use: "Load-tested on synthetic transaction data (single machine, local Docker, single Kafka broker): sustained about 146 transactions/s over roughly 100 s runs with no growing consumer backlog; median alert latency 25 to 38 ms, p95 1.0 to 1.6 s, measured from transaction creation to rule evaluation."
 
+### Stage 9: DONE
+- New endpoint GET /cards/{cardId}/alert-summary (JWT protected). Returns cardId, alertCount, ruleNames, summary.
+- AlertRepository.findAlertsByCardId: JPQL joining Alert to Transaction on transactionId, filtered by cardId, newest first. Named parameter. No schema change.
+- Package llm: LlmClient (Spring RestClient, Gemini generateContent, 10 s connect and read timeout, returns null on any failure or empty key, logs only the exception class), AlertSummaryService (builds prompt from the newest 20 alerts, dedupes rule names, fallback "Summary unavailable."), AlertSummaryResponse (record). controller/CardController.
+- Config: llm.api-key (from env LLM_API_KEY), llm.model, llm.timeout-seconds in application.properties. LLM_API_KEY in .env, .env.example (fake), docker-compose.yml (default empty).
+- Tests: AlertSummaryServiceTest, 4 unit tests with mocked AlertRepository and LlmClient (summary and dedupe, LLM failure fallback, no alerts skips LLM, 20-alert cap with full count). mvnw verify passes.
+- Tested by hand in Postman: success case. The wrong-key failure case was not run by hand.
+
+### Stage 9 decisions (with reasons)
+- One read-only summary endpoint instead of an async explainer. Reason: simpler, no background threads, and rule decisions cannot be affected. Rejected: async explanation saved on each alert.
+- No cardId column on alerts; join through transactions. Reason: keeps the card stored once, no change to Alert or the rules. Rejected: copying cardId into alerts.
+- LLM failure returns 200 with real count and rules, summary "Summary unavailable.". Reason: the data from our own database is still correct. Rejected: returning 500.
+- Only the newest 20 alerts go into the prompt. Reason: bounds request size and cost. Count still shows the full total.
+- Gemini free tier via Google AI Studio. Reason: no card needed. Rejected: Claude API (no free tier).
+- Swagger/springdoc stayed dropped; Postman only.
+
+### Resume-defensibility limits found in Stage 9
+- Summary is generated text and is not checked. Do not say "accurate" or that the AI detects fraud.
+- No caching and no rate limit on the endpoint: every call is one Gemini request.
+- Unit tests mock the LLM client. A real timeout or Google error path was not tested by hand.
+- Free-tier limits change; quote none.
+- Data is synthetic, and it is sent to an external API.
+- Wording to use: "Added a JWT-secured endpoint that returns an LLM-generated summary of a card's alerts (Gemini API, synthetic data); rule decisions are deterministic and unaffected; falls back to counts and rule names if the LLM is unavailable."
+
 ### Next step
-Stage 9 (optional): async AI alert explainer. Never changes a rule decision.
+All stages done. Remaining: final README pass and resume bullets from the Stage 8 and Stage 9 wording.
 
 ### Decisions (with reasons)
 - Transaction.id is a UUID made by the generator, not the database. The transaction exists before it reaches Postgres, and Kafka can deliver a message twice; a DB-made ID would turn one transaction into two rows. Rejected: DB-generated ID.
