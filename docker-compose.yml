@@ -89,6 +89,7 @@ services:
     environment:
       SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:29092
       GENERATOR_DELAY_MS: ${GENERATOR_DELAY_MS:-500}
+      GENERATOR_CARD_COUNT: ${GENERATOR_CARD_COUNT:-20}
     depends_on:
       kafka:
         condition: service_healthy

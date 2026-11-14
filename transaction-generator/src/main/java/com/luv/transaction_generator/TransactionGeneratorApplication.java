@@ -15,9 +15,10 @@ public class TransactionGeneratorApplication {
 
 	@Bean
 	CommandLineRunner sendForever(TransactionProducer producer,
-								  @Value("${generator.delay-ms}") long delayMs) {
+								  @Value("${generator.delay-ms}") long delayMs,
+								  @Value("${generator.card-count}") int cardCount) {
 		return args -> {
-			TransactionFactory factory = new TransactionFactory();
+			TransactionFactory factory = new TransactionFactory(cardCount);
 			while (true) {
 				producer.send(factory.create());
 				if (delayMs > 0) {

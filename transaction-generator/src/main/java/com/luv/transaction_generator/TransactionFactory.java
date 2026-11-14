@@ -15,6 +15,11 @@ public class TransactionFactory {
     // Burst state: when burstRemaining > 0, the next transactions reuse burstCardId.
     private String burstCardId = null;
     private int burstRemaining = 0;
+    private final int cardCount;
+
+    public TransactionFactory(int cardCount) {
+        this.cardCount = cardCount;
+    }
 
     public Transaction create() {
         // 20 cards: CARD-10001 to CARD-10020
@@ -25,11 +30,11 @@ public class TransactionFactory {
             burstRemaining--;
         } else if (random.nextInt(300) == 0) {
             // about 1 in 300: start a burst of 12 transactions on one card
-            burstCardId = "CARD-" + (10001 + random.nextInt(20));
+            burstCardId = "CARD-" + (10001 + random.nextInt(cardCount));
             burstRemaining = 11;
             cardId = burstCardId;
         } else {
-            cardId = "CARD-" + (10001 + random.nextInt(20));
+            cardId = "CARD-" + (10001 + random.nextInt(cardCount));
         }
         // amount in paise (1 rupee = 100 paise), so we never use floating point
         long paise;
