@@ -1,0 +1,14 @@
+## Run the whole system with Docker
+
+Requires Docker Desktop. No Java or Maven needed.
+
+1. Copy `.env.example` to `.env` and fill in your own values.
+   Keep the password hash in single quotes: `APP_PASSWORD_HASH='$2a$10$...'`
+2. Start everything:
+   ```
+   docker compose up -d --build
+   ```
+3. The API is at `http://localhost:8080`. Log in with `POST /login`, then call `/alerts` and `/transactions` with the token.
+4. Stop everything: `docker compose down`
+
+Services: Postgres, Redis, Kafka (topic `card-transactions`, 3 partitions, created by `kafka-init`), fraud-service, transaction-generator. All data is synthetic.

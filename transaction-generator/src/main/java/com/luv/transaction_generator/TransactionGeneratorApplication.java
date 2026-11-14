@@ -4,6 +4,7 @@ import org.springframework.boot.CommandLineRunner;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.context.annotation.Bean;
+import org.springframework.beans.factory.annotation.Value;
 
 @SpringBootApplication
 public class TransactionGeneratorApplication {
@@ -13,12 +14,15 @@ public class TransactionGeneratorApplication {
 	}
 
 	@Bean
-	CommandLineRunner sendForever(TransactionProducer producer) {
+	CommandLineRunner sendForever(TransactionProducer producer,
+								  @Value("${generator.delay-ms}") long delayMs) {
 		return args -> {
 			TransactionFactory factory = new TransactionFactory();
 			while (true) {
 				producer.send(factory.create());
-				Thread.sleep(500);
+				if (delayMs > 0) {
+					Thread.sleep(delayMs);
+				}
 			}
 		};
 	}

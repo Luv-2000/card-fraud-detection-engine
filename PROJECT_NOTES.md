@@ -46,32 +46,9 @@ Stage 9: async AI alert explainer. Never changes a rule decision.
 | 5 | JWT security | Login, token validation, protected API, credentials to env vars | Done | 4-5 h |
 | 6 | Tests | JUnit/Mockito for rules, Testcontainers for Postgres/Kafka/Redis | Done | 6-8 h |
 | 7 | CI | GitHub Actions build and test on push | Done | 2-3 h |
-| 7b | Containerize services | Dockerfile per service, compose runs the whole system | Todo | 1-2 h |
+| 7b | Containerize services | Dockerfile per service, compose runs the whole system | Done | 1-2 h |
 | 8 | Load test + resume bullets | Measure throughput and latency, bullets from real numbers | Todo | 4-5 h |
 | 9 | AI alert explainer | Async, optional | Optional | 4-6 h |
-
-## Teaching instructions (for Claude)
-- Guide step by step: exactly what to do next, which files to create, which commands to run (Windows PowerShell compatible).
-- Teach what each tool or concept is and why we use it BEFORE giving commands.
-- One concept at a time, explained directly (no analogies first). Beginner-friendly pace.
-- After each concept, a short comprehension check before moving on. Grade my answers honestly.
-- Keep code simple: no unnecessary abstraction, plain for-loops over streams.
-- Be crisp and honest. Flag anything that would not be defensible on a resume.
-- Check version-specific details (Spring Boot 4.x) before giving code. Do not rely on older 3.x examples.
-- At the end of each stage, give me an updated state block for this file.
-- Keep steps clean and in order. Do not re-list or restate earlier steps.
-  
-Testing:
-- Test every API endpoint using Postman.
-- Teach each tool from scratch the first time it is used: what it is, why it is needed, how to use it.
-- Include a Postman test step in each stage that adds or changes an endpoint.
-Git:
-- Commit to git regularly, not only at the end of a stage.
-- Tell me when to commit: after each working step (a feature runs or a test passes), and always before I start a new chat.
-- Give me the exact commands and a one-line commit message each time (for example "Stage 2: add Transaction entity and repository").
-- Make the last commit of each stage "Stage N complete", then push to GitHub.
-- Before the first commit, set up .gitignore. Never commit passwords, the JWT secret, or any local config with credentials.
-- Update the state block in PROJECT_NOTES.md before the stage-end commit, so the commit holds the latest state.
 
 ## Current state
 
@@ -175,8 +152,30 @@ Windows, PowerShell, IntelliJ IDEA, Java 21 (Temurin), Docker Desktop. Maven via
 - A green build is only as strong as the tests: no coverage measured.
 - Wording to use: "GitHub Actions CI builds and runs unit and integration tests on every push". Do not add a build badge until it is shown green in the README.
 
+### Stage 7b: DONE
+- Dockerfile in fraud-service and transaction-generator: multi-stage (eclipse-temurin:21-jdk builds the jar with ./mvnw package -DskipTests, 21-jre runs it). .dockerignore in both (target, .git, .env, .idea, *.iml).
+- docker-compose.yml now runs 6 containers: postgres, kafka, kafka-init (creates topic card-transactions, 3 partitions, then exits), redis, fraud-service, transaction-generator.
+- Kafka has two listeners: HOST (localhost:9092, for IntelliJ and tests) and DOCKER (kafka:29092, for containers). Containers get SPRING_KAFKA_BOOTSTRAP_SERVERS=kafka:29092.
+- Containers override localhost through env vars: SPRING_DATASOURCE_URL, SPRING_DATA_REDIS_HOST, SPRING_KAFKA_BOOTSTRAP_SERVERS. application.properties unchanged, so IntelliJ still works.
+- Healthchecks: pg_isready, redis-cli ping, kafka-topics.sh --list. fraud-service waits for all three plus kafka-init (service_completed_successfully). Generator waits for kafka and kafka-init.
+- Secrets come from .env through compose. APP_PASSWORD_HASH must be in single quotes in .env.
+- Tested by hand: login 200, alerts, transactions, 401 without token.
+
+### Stage 7b decisions (with reasons)
+- Build the jar inside Docker (multi-stage). Reason: a fresh clone has no target folder, so only Docker is needed to run it. Rejected: COPY of a locally built jar.
+- Topic created by a one-shot kafka-init container. Reason: Kafka has no volume, so the topic vanished on down, and auto-creation would give 1 partition. Rejected: creating the topic in Java code (NewTopic bean), a Kafka volume.
+- Two Kafka listeners instead of one. Reason: Kafka replies with an advertised address, which must work from where the client runs.
+- Docker build skips tests (-DskipTests). Reason: tests run in GitHub Actions CI.
+
+### Resume-defensibility limits found in Stage 7b
+- Healthchecks control startup order only. Nothing restarts a failed container, so do not claim "self-healing" or "fault tolerant".
+- Still local, single node, single broker, plain HTTP. Do not claim "production-ready".
+- Kafka has no volume: messages are lost on docker compose down.
+- Image sizes not measured, so do not quote them.
+- Wording to use: "containerized both services with multi-stage Docker builds; Docker Compose runs the full system (Kafka, Postgres, Redis, two services) with health-checked startup order".
+
 ### Next step
-Stage 7b: Dockerfile per service, compose runs the whole system.
+Stage 8: load test and resume bullets.
 
 ### Decisions (with reasons)
 - Transaction.id is a UUID made by the generator, not the database. The transaction exists before it reaches Postgres, and Kafka can deliver a message twice; a DB-made ID would turn one transaction into two rows. Rejected: DB-generated ID.

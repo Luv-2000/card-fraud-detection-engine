@@ -88,6 +88,7 @@ services:
     container_name: transaction-generator
     environment:
       SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+      GENERATOR_DELAY_MS: ${GENERATOR_DELAY_MS:-500}
     depends_on:
       kafka:
         condition: service_healthy
