@@ -73,6 +73,7 @@ services:
       JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is not set}
       APP_USERNAME: ${APP_USERNAME:?APP_USERNAME is not set}
       APP_PASSWORD_HASH: ${APP_PASSWORD_HASH:?APP_PASSWORD_HASH is not set}
+      LLM_API_KEY: ${LLM_API_KEY:-}
     depends_on:
       postgres:
         condition: service_healthy
