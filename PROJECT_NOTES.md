@@ -47,7 +47,7 @@ Stage 9: async AI alert explainer. Never changes a rule decision.
 | 6 | Tests | JUnit/Mockito for rules, Testcontainers for Postgres/Kafka/Redis | Done | 6-8 h |
 | 7 | CI | GitHub Actions build and test on push | Done | 2-3 h |
 | 7b | Containerize services | Dockerfile per service, compose runs the whole system | Done | 1-2 h |
-| 8 | Load test + resume bullets | Measure throughput and latency, bullets from real numbers | Todo | 4-5 h |
+| 8 | Load test + resume bullets | Measure throughput and latency, bullets from real numbers | Done | 4-5 h |
 | 9 | AI alert explainer | Async, optional | Optional | 4-6 h |
 
 ## Current state
@@ -174,8 +174,31 @@ Windows, PowerShell, IntelliJ IDEA, Java 21 (Temurin), Docker Desktop. Maven via
 - Image sizes not measured, so do not quote them.
 - Wording to use: "containerized both services with multi-stage Docker builds; Docker Compose runs the full system (Kafka, Postgres, Redis, two services) with health-checked startup order".
 
+### Stage 8: DONE
+- Edits: spring.jpa.show-sql=false in fraud-service. Generator reads generator.delay-ms (default 500) and generator.card-count (default 20) from properties; compose passes GENERATOR_DELAY_MS and GENERATOR_CARD_COUNT from the shell (defaults 500 and 20).
+- loadtest/measure.sql prints: transaction count, span in seconds, tx/s, alert latency p50/p95/max, alerts per rule. Run with: Get-Content loadtest\measure.sql | docker exec -i fraud-postgres psql -U fraud -d frauddb
+- Procedure per run: docker compose down, up everything except the generator, wait 60 s, TRUNCATE alerts, transactions, run the generator with delay 0 and 2000 cards for about 90 s, stop it, check consumer lag is 0, run measure.sql.
+- Results (two runs, delay 0, 2000 cards): 148.7/s and 146.3/s; alert latency p50 24.6 and 37.8 ms, p95 1,032 and 1,602 ms, max 2,986 and 3,202 ms; lag 0 after each run; 15,340 and 14,270 transactions.
+- Setup: i5-12450H (8 cores/12 threads), 16 GB RAM, Docker 12 CPUs / about 7.6 GB, single Kafka broker, 3 partitions, one fraud-service instance, generator on the same machine.
+- Performance section added to README.
+
+### Stage 8 decisions (with reasons)
+- Measure with the existing timestamps and SQL, no new tool. Reason: transaction.timestamp and alert.createdAt already hold what latency needs. Rejected: JMeter, Gatling, k6, Prometheus/Grafana (extra learning, no extra resume value, out of scope).
+- Card count made configurable (2,000 for the test). Reason: with 20 cards at 10 tx/s the velocity rule fired on about two thirds of transactions, which is not realistic. Rejected: keeping 20 cards.
+- Two runs, lower figures reported. Reason: one run can be a fluke (warm-up outliers seen). Rejected: a single run, tuning the consumer to look better.
+- A 10 tx/s run was dropped from the results. Its rate (4.7/s) did not match its own offsets and was not explained.
+
+### Resume-defensibility limits found in Stage 8
+- About 146/s is the generator's send rate, not fraud-service's ceiling (the generator waits for Kafka's confirmation per message). Say "sustained about 146 transactions/s with no growing backlog", not "can handle" or "maximum".
+- Lag rose and fell (up to about 60 per partition) but ended at 0. The p95 of 1.0 to 1.6 s is probably messages waiting in Kafka: an inference, not measured.
+- Latency covers only transactions that raised an alert, from the generator timestamp to the moment the rule fired (before the alert is saved).
+- Generator and system share one machine. Local Docker, single broker, single instance. Not a production benchmark.
+- Per-message System.out.println in the consumer and producer was left in place during the runs.
+- Do not claim "real-time" without the numbers and setup next to it.
+- Wording to use: "Load-tested on synthetic transaction data (single machine, local Docker, single Kafka broker): sustained about 146 transactions/s over roughly 100 s runs with no growing consumer backlog; median alert latency 25 to 38 ms, p95 1.0 to 1.6 s, measured from transaction creation to rule evaluation."
+
 ### Next step
-Stage 8: load test and resume bullets.
+Stage 9 (optional): async AI alert explainer. Never changes a rule decision.
 
 ### Decisions (with reasons)
 - Transaction.id is a UUID made by the generator, not the database. The transaction exists before it reaches Postgres, and Kafka can deliver a message twice; a DB-made ID would turn one transaction into two rows. Rejected: DB-generated ID.
@@ -196,4 +219,3 @@ Spring Boot basics and component scanning, Docker, Docker Compose, JDBC, connect
 - Handle the timezone issue in tests (stage 6).
 - Handle validation failures in the Kafka consumer, not the REST handler (stage 3).
 - Test that validation rejects bad data (stage 6).
-- Decide whether to keep show-sql on; it adds noise during the load test (stage 8).

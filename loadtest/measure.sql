@@ -1,4 +1,5 @@
 SELECT count(*) AS transactions,
+       round(extract(epoch FROM (max(timestamp) - min(timestamp)))::numeric, 1) AS span_s,
        round(count(*) / extract(epoch FROM (max(timestamp) - min(timestamp)))::numeric, 1) AS tx_per_sec
 FROM transactions;
 

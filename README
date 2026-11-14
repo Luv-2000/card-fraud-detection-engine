@@ -12,3 +12,26 @@ Requires Docker Desktop. No Java or Maven needed.
 4. Stop everything: `docker compose down`
 
 Services: Postgres, Redis, Kafka (topic `card-transactions`, 3 partitions, created by `kafka-init`), fraud-service, transaction-generator. All data is synthetic.
+
+## Performance (local load test)
+
+Measured on synthetic transaction data, not real card data.
+
+**Setup:** Windows laptop, Intel Core i5-12450H (8 cores / 12 threads), 16 GB RAM, Docker Desktop (12 CPUs, about 7.6 GB RAM allowed). Single Kafka broker, 3 partitions, one fraud-service instance, everything running in local Docker on the same machine, including the load generator. 2,000 simulated cards.
+
+**Method:** The generator was run with no delay between messages for about 100 seconds, twice. Throughput is transactions saved divided by the time between the first and last transaction timestamp. Alert latency is `alerts.created_at - transactions.timestamp` (generator timestamp to the moment the rule fired, before the alert is saved). The query is in `loadtest/measure.sql`.
+
+| | Run 1 | Run 2 |
+|---|---|---|
+| Transactions | 15,340 | 14,270 |
+| Throughput | 148.7/s | 146.3/s |
+| Alert latency p50 | 24.6 ms | 37.8 ms |
+| Alert latency p95 | 1,032 ms | 1,602 ms |
+| Max alert latency | 2,986 ms | 3,202 ms |
+| Consumer lag after the run | 0 | 0 |
+
+**Limits:**
+- The generator waits for Kafka's confirmation after every message, so about 146/s is the load it could send, not the maximum fraud-service can handle. The real ceiling was not found.
+- Consumer lag moved up and down (up to about 60 per partition) but did not keep growing.
+- Latency covers only transactions that produced an alert.
+- Local, single node, plain HTTP. Not a production benchmark.
